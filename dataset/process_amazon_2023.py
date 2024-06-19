@@ -8,6 +8,7 @@ import numpy as np
 from tqdm import tqdm
 from datasets import load_dataset
 from transformers import AutoModel, AutoTokenizer
+from sentence_transformers import SentenceTransformer
 
 
 def parse_args():
@@ -17,7 +18,7 @@ def parse_args():
     parser.add_argument('--n_workers', type=int, default=16)
     parser.add_argument('--output_dir', type=str, default='processed/')
     parser.add_argument('--device', type=str, default='cuda:0')
-    parser.add_argument('--plm', type=str, default='hyp1231/blair-roberta-base')
+    parser.add_argument('--plm', type=str, default='sentence-transformers/sentence-t5-base')
     parser.add_argument('--batch_size', type=int, default=16)
     return parser.parse_args()
 
@@ -137,6 +138,8 @@ if __name__ == '__main__':
     '''
     Process interaction sequences and item metadata
     '''
+    print(f"Processing {args.domain}...")
+
     datasets = load_dataset(
         "McAuley-Lab/Amazon-Reviews-2023",
         f"0core_timestamp_w_his_{args.domain}",
@@ -171,9 +174,12 @@ if __name__ == '__main__':
             ):
                 f.write(f"{user_id}\t{history}\t{parent_asin}\n")
 
+    print("Interaction sequences and item metadata processed.")
+
     '''
     Remap IDs
     '''
+    print("Remapping IDs...")
     data_maps = remap_id(truncated_datasets)
     id2meta = {0: '[PAD]'}
     for item in item2meta:
@@ -186,43 +192,84 @@ if __name__ == '__main__':
     with open(output_path, 'w') as f:
         json.dump(data_maps, f)
 
+    print("IDs remapped.")
+
     '''
     Generate item features
     '''
+    print("Generating item features...")
+
     device = torch.device(args.device)
-    tokenizer = AutoTokenizer.from_pretrained(args.plm)
-    model = AutoModel.from_pretrained(args.plm).to(device)
+    
+    # model = AutoModel.from_pretrained(args.plm).to(device)
+    model = SentenceTransformer(args.plm, device=device)
+
+
     sorted_text = []    # 1-base, sorted_text[0] -> item_id=1
     for i in range(1, len(data_maps['item2id'])):
         sorted_text.append(data_maps['id2meta'][i])
-    
-    all_embeddings = []
-    for pr in tqdm(range(0, len(sorted_text), args.batch_size)):
-        batch = sorted_text[pr:pr + args.batch_size]
-        inputs = tokenizer(batch, padding=True, truncation=True, max_length=512, return_tensors='pt').to(device)
-        with torch.no_grad():
-            outputs = model(**inputs)
-        embeddings = outputs.last_hidden_state[:, 0, :].cpu().numpy()
-        all_embeddings.append(embeddings)
-    all_embeddings = np.concatenate(all_embeddings, axis=0)
-    all_embeddings.tofile(os.path.join(output_dir, f'{args.domain}.{args.plm.split("/")[-1]}.feature'))
+
+    item_profile=model.encode(sorted_text, convert_to_tensor=True,device=str(device))
+    torch.save(item_profile, os.path.join(output_dir, 'item_profile.pth'))
+
+
+    with open(os.path.join(output_dir, 'item_profile.txt'), 'w') as f:
+        for line in sorted_text:
+            f.write(f"{line}\n")
+
+    print("Item features generated.")
 
     '''
-    Statistics
+    Generate User features
     '''
-    print(f"#Users: {len(data_maps['user2id']) - 1}")
-    print(f"#Items: {len(data_maps['item2id']) - 1}")
-    n_interactions = {}
+    print("Generating User features...")
+    user_behavior = {'train': [], 'valid': [], 'test': []}
+    target = {'train': [], 'valid': [], 'test': []}
+
     for split in ['train', 'valid', 'test']:
-        n_interactions[split] = len(truncated_datasets[split])
-        for history in truncated_datasets[split]['history']:
-            if len(history.split(' ')) == 1:
-                n_interactions[split] += 1
-    print(f"#Interaction in total: {sum(n_interactions.values())}")
-    print(n_interactions)
-    avg_his_length = 0
-    for split in ['train', 'valid', 'test']:
-        avg_his_length += sum([len(_.split(' ')) for _ in truncated_datasets[split]['history']])
-    avg_his_length /= sum([len(truncated_datasets[split]) for split in ['train', 'valid', 'test']])
-    print(f"Average history length: {avg_his_length}")
-    print(f"Average character length of metadata: {np.mean([len(_) for _ in sorted_text])}")
+        for user_id, history, parent_asin in zip(truncated_datasets[split]['user_id'], truncated_datasets[split]['history'], truncated_datasets[split]['parent_asin']):
+            item_titles = []
+            for item_id in history.split(' '):
+                item_title = item2meta[item_id].split('.')[0]  # Extract the item title from metadata
+                item_titles.append(item_title)
+            user_behavior[split].append(f"User bought items: {', '.join(item_titles)}")
+            target[split].append(parent_asin)
+        
+        user_behavior[split] = model.encode(user_behavior[split], convert_to_tensor=True,device=str(device))
+        target[split] = model.encode(target[split], convert_to_tensor=True,device=str(device))
+        torch.save(user_behavior[split], os.path.join(output_dir, f'{split}_user_behavior.pth'))
+        torch.save(target[split], os.path.join(output_dir, f'{split}_target.pth'))
+
+        behavior_output_path = os.path.join(output_dir, f'{split}_user_behavior.txt')
+        target_output_path = os.path.join(output_dir, f'{split}_target.txt')
+
+        with open(behavior_output_path, 'w') as f:
+            for line in user_behavior[split]:
+                f.write(f"{line}\n")
+        
+        with open(target_output_path, 'w') as f:
+            for line in target[split]:
+                f.write(f"{line}\n")
+
+    print("User features generated.")
+
+
+    # '''
+    # Statistics
+    # '''
+    # print(f"#Users: {len(data_maps['user2id']) - 1}")
+    # print(f"#Items: {len(data_maps['item2id']) - 1}")
+    # n_interactions = {}
+    # for split in ['train', 'valid', 'test']:
+    #     n_interactions[split] = len(truncated_datasets[split])
+    #     for history in truncated_datasets[split]['history']:
+    #         if len(history.split(' ')) == 1:
+    #             n_interactions[split] += 1
+    # print(f"#Interaction in total: {sum(n_interactions.values())}")
+    # print(n_interactions)
+    # avg_his_length = 0
+    # for split in ['train', 'valid', 'test']:
+    #     avg_his_length += sum([len(_.split(' ')) for _ in truncated_datasets[split]['history']])
+    # avg_his_length /= sum([len(truncated_datasets[split]) for split in ['train', 'valid', 'test']])
+    # print(f"Average history length: {avg_his_length}")
+    # print(f"Average character length of metadata: {np.mean([len(_) for _ in sorted_text])}")
