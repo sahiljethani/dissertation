@@ -1,12 +1,21 @@
 data_path: 'dataset/processed/'
-benchmark_filename: [train, valid, test]
+benchmark_filename: ['train', 'valid', 'test']
+
+
 alias_of_item_id: [item_id_list]
-load_col:
-  inter: [user_id, item_id_list, item_id]
+field_separator: "\t"
+USER_ID_FIELD: 'user_id'
+ITEM_ID_FIELD: 'item_id'
+TIME_FIELD: 'timestamp'
+ITEM_SEQ_FIELD: 'item_id_list'
+load_col: {'inter': ['user_id','item_id_list','item_id', 'timestamp']}
+
 train_neg_sample_args: ~
 
-topk: [10, 50]
-metrics: [Recall, NDCG]
+topk: [5,10, 50]
+metrics: [Hit, NDCG]
 valid_metric: NDCG@10
 eval_batch_size: 2048
+train_batch_size: 2048
 stopping_step: 10
+max_seq_length: 50

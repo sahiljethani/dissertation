@@ -17,7 +17,6 @@ def parse_args():
     parser.add_argument('--max_his_len', type=int, default=50)
     parser.add_argument('--n_workers', type=int, default=16)
     parser.add_argument('--output_dir', type=str, default='processed/')
-    parser.add_argument('--device', type=str, default='cuda:0')
     parser.add_argument('--plm', type=str, default='sentence-transformers/sentence-t5-base')
     parser.add_argument('--batch_size', type=int, default=16)
     return parser.parse_args()
@@ -134,6 +133,10 @@ def process_meta(args):
 
 if __name__ == '__main__':
     args = parse_args()
+    
+    #if cude is available, use it
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
 
     '''
     Process interaction sequences and item metadata
@@ -199,7 +202,7 @@ if __name__ == '__main__':
     '''
     print("Generating item features...")
 
-    device = torch.device(args.device)
+    device = torch.device(device)
     
     # model = AutoModel.from_pretrained(args.plm).to(device)
     model = SentenceTransformer(args.plm, device=device)

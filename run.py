@@ -31,7 +31,11 @@ def run_single(model_name, dataset, pretrained_file='', **kwargs):
     train_data, valid_data, test_data = data_preparation(config, dataset)
 
     # model loading and initialization
-    model = model_class(config, train_data.dataset).to(config['device'])
+
+    #check if cuda is available
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    model = model_class(config, train_data.dataset).to(device)
 
     # Load pre-trained model
     if pretrained_file != '':
@@ -54,6 +58,10 @@ def run_single(model_name, dataset, pretrained_file='', **kwargs):
     logger.info(set_color('best valid ', 'yellow') + f': {best_valid_result}')
     logger.info(set_color('test result', 'yellow') + f': {test_result}')
 
+    print("Best valid result: ", best_valid_result)
+    print("Test result: ", test_result)
+    print("Best valid score: ", best_valid_score)
+
     return config['model'], config['dataset'], {
         'best_valid_score': best_valid_score,
         'valid_score_bigger': config['valid_metric_bigger'],
@@ -63,7 +71,7 @@ def run_single(model_name, dataset, pretrained_file='', **kwargs):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-m', type=str, default='UniSRec', help='model name')
+    parser.add_argument('-m', type=str, default='SASRec', help='model name')
     parser.add_argument('-d', type=str, default='All_Beauty', help='dataset name')
     parser.add_argument('-p', type=str, default='', help='pre-trained model path')
     args, unparsed = parser.parse_known_args()
