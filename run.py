@@ -17,6 +17,8 @@ def run_single(model_name, dataset, pretrained_file='', **kwargs):
 
     # configurations initialization
     config = Config(model=model_class, dataset=dataset, config_file_list=props, config_dict=kwargs)
+    print(config)
+
     init_seed(config['seed'], config['reproducibility'])
     # logger initialization
     init_logger(config)

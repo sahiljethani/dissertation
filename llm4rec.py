@@ -17,7 +17,6 @@ from evaluate import metrics_10
 def run(domain):
 
     path=f'dataset/processed/{domain}'
-
     #loading pre-trained embeddings
     item_profile_embeddings = torch.load(f'{path}/item_profile_embeddings.pth')
     valid_user_embeddings = torch.load(f'{path}/valid_user_embeddings.pth')
@@ -80,3 +79,4 @@ if __name__ == '__main__':
     print(f'LLM for for {args.d}')
 
     run(args.d)
+
