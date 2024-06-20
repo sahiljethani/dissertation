@@ -16,7 +16,7 @@ from evaluate import metrics_10
 
 def run(domain):
 
-    path=f'dataset/processed/{domain}/'
+    path=f'dataset/processed/{domain}'
 
     #loading pre-trained embeddings
     item_profile_embeddings = torch.load(f'{path}/item_profile_embeddings.pth')
