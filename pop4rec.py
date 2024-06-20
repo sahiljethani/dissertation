@@ -25,7 +25,7 @@ def popularity(domain):
     top_50_items=train_data['item_id'].value_counts().head(50).index.tolist()
 
     #evaluat metric for top 50 items
-    k_list=[5,10,50]
+    k_list=[10,50]
     for k in k_list:
         ndcg, hr = metrics_10(test_target, top_50_items,k)
         print(f'NDCG@{k}: {ndcg:.4f}')
