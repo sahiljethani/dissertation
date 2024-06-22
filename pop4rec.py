@@ -6,8 +6,8 @@ from evaluate import metrics_10
 def popularity(domain):
 
     #load data
-    train_dataset_path=f'dataset/processed/{domain}/{domain}.train.inter'
-    test_dataset_path=f'dataset/processed/{domain}/{domain}.test.inter'
+    train_dataset_path=f'processed/{domain}/{domain}.train.inter'
+    test_dataset_path=f'processed/{domain}/{domain}.test.inter'
 
     #load train and test data
     train_data = pd.read_csv(train_dataset_path, sep='\t', header=None)
