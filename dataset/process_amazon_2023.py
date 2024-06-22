@@ -238,10 +238,8 @@ if __name__ == '__main__':
             user_behavior[split].append(f"User bought items: {', '.join(item_titles)}")
             target[split].append(parent_asin)
         
-        user_behavior[split] = model.encode(user_behavior[split], convert_to_tensor=True,device=str(device))
-        target[split] = model.encode(target[split], convert_to_tensor=True,device=str(device))
-        torch.save(user_behavior[split], os.path.join(output_dir, f'{split}_user_behavior.pth'))
-        torch.save(target[split], os.path.join(output_dir, f'{split}_target.pth'))
+        user_behavior_embeddings = model.encode(user_behavior[split], convert_to_tensor=True,device=str(device))
+        torch.save(user_behavior_embeddings, os.path.join(output_dir, f'{split}_user_behavior.pth'))
 
         behavior_output_path = os.path.join(output_dir, f'{split}_user_behavior.txt')
         target_output_path = os.path.join(output_dir, f'{split}_target.txt')
