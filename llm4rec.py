@@ -64,8 +64,8 @@ def run(domain,path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-domain', type=str, default='All_Beauty', help='dataset name')
-    parser.add_argument('-path', type=str, default='processed', help='dataset name')
+    parser.add_argument('--domain', type=str, default='All_Beauty', help='dataset name')
+    parser.add_argument('--path', type=str, default='processed', help='dataset name')
     args, unparsed = parser.parse_known_args()
     print(args)
 
