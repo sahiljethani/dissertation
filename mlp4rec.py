@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
-import sentence_transformers
 import numpy as np
 import logging
 from tqdm import tqdm
@@ -12,6 +11,8 @@ import json
 from evaluate import metrics_10
 import os
 import argparse
+import matplotlib.pyplot as plt
+
 
 
 
@@ -21,7 +22,7 @@ print(device)
 
 
 #Model Architecture
-def run(domain,path):
+def run(domain,path,batch):
     class UserModel(nn.Module):
         def __init__(self):
             super(UserModel, self).__init__()
@@ -131,6 +132,7 @@ def run(domain,path):
     # valid_item_texts = []
     with open(os.path.join(domain_path,'valid_target.txt'), 'r') as f:
         valid_target = f.readlines()
+    valid_target = [line.strip() for line in valid_target]
 
     with open(os.path.join(domain_path,'test_target.txt'), 'r') as f:
         test_target = f.readlines()
@@ -138,10 +140,8 @@ def run(domain,path):
 
 
 
-
-
     dataset = UserItemDataset(train_user_embeddings, train_item_embeddings)
-    dataloader = DataLoader(dataset, batch_size=1024, shuffle=False)
+    dataloader = DataLoader(dataset, batch_size=batch, shuffle=False)
 
 
 
@@ -152,9 +152,22 @@ def run(domain,path):
     optimizer = torch.optim.AdamW(list(user_model.parameters()) + list(item_model.parameters()), lr=1e-4)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=2, factor=0.5)
 
-    # logging.getLogger('sentence_transformers').setLevel(logging.WARNING)
+    # Initialize metrics storage
+    Train_Loss = []
+    Valid_Loss = []
+    NDCG = []
+    HR = []
+    Train_Entropy = []
+    Valid_Entropy = []
+    Train_Pos_loss = []
+    Valid_Pos_loss = []
+    Train_Neg_loss = []
+    Valid_Neg_loss = []
 
-    for epoch in range(100):  # Example epoch count
+    best_ndcg = -1
+    best_hr = -1
+
+    for epoch in range(50):  # Example epoch count
         user_model.train()
         item_model.train()
         epoch_loss = 0
@@ -164,8 +177,8 @@ def run(domain,path):
         
         for user_emb_batch, item_emb_batch in tqdm(dataloader):
 
-            user_embeddings = user_model(user_emb_batch)
-            item_embeddings = item_model(item_emb_batch)
+            user_embeddings = user_model(user_emb_batch.to(device))
+            item_embeddings = item_model(item_emb_batch.to(device))
 
             pos,neg = cosine_embedding_loss(user_embeddings, item_embeddings)
             loss_bce = binary_cross_entropy(user_embeddings, item_embeddings)
@@ -177,9 +190,9 @@ def run(domain,path):
             total_loss.backward()
             optimizer.step()
             epoch_loss += total_loss.item()
-            pos_loss+=pos
-            neg_loss+=neg
-            entropy_loss+=loss_bce
+            pos_loss+=pos.item()
+            neg_loss+=neg.item()
+            entropy_loss+=loss_bce.item()
             
             
 
@@ -196,7 +209,7 @@ def run(domain,path):
             
             v_pos,v_neg = cosine_embedding_loss(model_valid_user_embeddings, model_valid_item_embeddings)
             v_loss_bce = binary_cross_entropy(model_valid_user_embeddings, model_valid_item_embeddings)
-            v_total=v_pos+v_neg+v_loss_bce
+            v_total=v_pos+2*v_neg+v_loss_bce
             
             index = faiss.IndexFlatIP(768)
             index.add(model_item_profile_embeddings.cpu().detach().numpy())
@@ -206,30 +219,86 @@ def run(domain,path):
                 top_10_sentences = [data_maps['id2item'][i] for i in idx]
                 predictions.append(top_10_sentences)
 
-            ndcg, hr = metrics_10(valid_target, predictions)
+            ndcg, hr = metrics_10(valid_target, predictions,10)
 
         
         avg_epoch_loss = epoch_loss / len(dataloader)
-        print(f"Epoch: {epoch}, Train Loss: {avg_epoch_loss:.4f},Valid Loss: {v_total:.4f}, NDCG: {ndcg:.4f}, HR: {hr:.4f},Train_Entropy: {entropy_loss/len(dataloader):.4f},Train_Pos_loss: {pos_loss/len(dataloader):.4f},Train_Neg_loss:{neg_loss/len(dataloader):.4f},Valid_Entropy: {v_loss_bce:.4f},valid_Pos_loss: {v_pos:.4f},valid_neg_loss: {v_neg:.4f}")
+        Train_Loss.append(avg_epoch_loss)
+        Valid_Loss.append(v_total.item())
+        NDCG.append(ndcg)
+        HR.append(hr)
+        Train_Entropy.append(entropy_loss / len(dataloader))
+        Valid_Entropy.append(v_loss_bce.item())
+        Train_Pos_loss.append(pos_loss / len(dataloader))
+        Valid_Pos_loss.append(v_pos.item())
+        Train_Neg_loss.append(neg_loss / len(dataloader))
+        Valid_Neg_loss.append(v_neg.item())
+        print(f"Epoch: {epoch}, Train Loss: {avg_epoch_loss:.4f}, Valid Loss: {v_total:.4f}, NDCG: {ndcg:.4f}, HR: {hr:.4f}, "
+              f"Train_Entropy: {entropy_loss/len(dataloader):.4f}, Train_Pos_loss: {pos_loss/len(dataloader):.4f}, "
+              f"Train_Neg_loss: {neg_loss/len(dataloader):.4f}, Valid_Entropy: {v_loss_bce:.4f}, "
+              f"Valid_Pos_loss: {v_pos:.4f}, Valid_Neg_loss: {v_neg:.4f}")
         
-        save_dir = os.path.join(domain_path,f'model_mlp/model_{epoch}.pth')
-
-        torch.save({
-            'epoch': epoch,
-            'user_model_state_dict': user_model.state_dict(),
-            'item_model_state_dict': item_model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'loss': avg_epoch_loss,
-            'ndcg': ndcg,
-            'hr': hr
-        }, save_dir)
+        # Save best model based on NDCG@10
+        if ndcg > best_ndcg or (ndcg == best_ndcg and hr > best_hr):
+            best_ndcg = ndcg
+            best_hr=hr
+            
+            save_dir = os.path.join(domain_path, 'best_model.pth')
+            torch.save({
+                'epoch': epoch,
+                'user_model_state_dict': user_model.state_dict(),
+                'item_model_state_dict': item_model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': avg_epoch_loss,
+                'ndcg': ndcg,
+                'hr': hr
+            }, save_dir)
+        
+    
 
         scheduler.step(avg_epoch_loss)
+
+     # Plotting metrics
+    Epoch = list(range(50))
+    fig, axs = plt.subplots(6, 1, figsize=(10, 20), sharex=True)
+
+    axs[0].plot(Epoch, Train_Loss, label='Train Loss', marker='o')
+    axs[0].plot(Epoch, Valid_Loss, label='Valid Loss', marker='o')
+    axs[0].set_title('Total Loss')
+    axs[0].legend()
+
+    axs[1].plot(Epoch, NDCG, label='NDCG', marker='o')
+    axs[1].set_title('NDCG')
+    axs[1].legend()
+
+    axs[2].plot(Epoch, HR, label='HR', marker='o')
+    axs[2].set_title('HR')
+    axs[2].legend()
+
+    axs[3].plot(Epoch, Train_Entropy, label='Train Entropy', marker='o')
+    axs[3].plot(Epoch, Valid_Entropy, label='Valid Entropy', marker='o')
+    axs[3].set_title('Entropy')
+    axs[3].legend()
+
+    axs[4].plot(Epoch, Train_Pos_loss, label='Train Positive Loss', marker='o')
+    axs[4].plot(Epoch, Valid_Pos_loss, label='Valid Positive Loss', marker='o')
+    axs[4].set_title('Positive Loss')
+    axs[4].legend()
+
+    axs[5].plot(Epoch, Train_Neg_loss, label='Train Negative Loss', marker='o')
+    axs[5].plot(Epoch, Valid_Neg_loss, label='Valid Negative Loss', marker='o')
+    axs[5].set_title('Negative Loss')
+    axs[5].legend()
+
+    #plt.show()
+    fig.savefig(os.path.join(domain_path, 'loss_plot.png'))
+    
+
 
 
     #TESTING
         
-    checkpoint = torch.load('/kaggle/working/model_23.pth')
+    checkpoint = torch.load(os.path.join(domain_path, 'best_model.pth'))
     user_model.load_state_dict(checkpoint['user_model_state_dict'])
     item_model.load_state_dict(checkpoint['item_model_state_dict'])
 
@@ -239,8 +308,8 @@ def run(domain,path):
 
 
     with torch.no_grad():
-        model_test_user_embeddings = user_model(test_user_embeddings)
-        model_item_profile_embeddings = item_model(item_profile_embeddings)
+        model_test_user_embeddings = user_model(test_user_embeddings.to(device))
+        model_item_profile_embeddings = item_model(item_profile_embeddings.to(device))
 
         index = faiss.IndexFlatIP(768)
         index.add(model_item_profile_embeddings.cpu().detach().numpy())
@@ -250,10 +319,9 @@ def run(domain,path):
             top_10_sentences = [data_maps['id2item'][i] for i in idx]
             predictions.append(top_10_sentences)
 
-        k=[10,50]
-        for k in k:
+        for k in [10, 50]:
             print(f'For test set')
-            ndcg, hr = metrics_10(test_target, predictions,k)
+            ndcg, hr = metrics_10(test_target, predictions, k)
             print(f'NDCG@{k}: {ndcg:.4f}')
             print(f'HR@{k}: {hr:.4f}')
         
@@ -262,7 +330,8 @@ def run(domain,path):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--domain', type=str, default='All_Beauty', help='dataset name')
-    parser.add_argument('--path', type=str, default='processed', help='dataset name')
+    parser.add_argument('--path', type=str, default='processed', help='path to dataset')
+    parser.add_argument('--batch', type=int, default=512, help='batch size')
     args, unparsed = parser.parse_known_args()
     print(args)
 
