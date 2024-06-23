@@ -273,6 +273,7 @@ if __name__ == '__main__':
     print("Generating User features...")
     user_behavior = {'train': [], 'valid': [], 'test': []}
     target = {'train': [], 'valid': [], 'test': []}
+    target_texts = {'train': [], 'valid': [], 'test': []}
 
     for split in ['train', 'valid', 'test']:
         for user_id, history, parent_asin in zip(truncated_datasets[split]['user_id'], truncated_datasets[split]['history'], truncated_datasets[split]['parent_asin']):
@@ -282,12 +283,20 @@ if __name__ == '__main__':
                 item_titles.append(item_title)
             user_behavior[split].append(f"User bought items: {', '.join(item_titles)}")
             target[split].append(parent_asin)
+
+            item_id = data_maps['item2id'][f'{parent_asin}']
+            target_texts[split].append(data_maps['id2meta'][f'{item_id}'])
         
         user_behavior_embeddings = model.encode(user_behavior[split], convert_to_tensor=True,device=str(device))
         torch.save(user_behavior_embeddings, os.path.join(output_dir, f'{split}_user_behavior.pth'))
 
+        target_item_text_embeddings = model.encode(target_texts[split], convert_to_tensor=True,device=str(device))
+        torch.save(target_item_text_embeddings, os.path.join(output_dir, f'{split}_item_embeddings.pth'))
+
         behavior_output_path = os.path.join(output_dir, f'{split}_user_behavior.txt')
+
         target_output_path = os.path.join(output_dir, f'{split}_target.txt')
+
 
         with open(behavior_output_path, 'w') as f:
             for line in user_behavior[split]:
