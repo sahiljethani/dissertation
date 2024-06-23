@@ -285,7 +285,7 @@ if __name__ == '__main__':
             target[split].append(parent_asin)
 
             item_id = data_maps['item2id'][f'{parent_asin}']
-            target_texts[split].append(data_maps['id2meta'][f'{item_id}'])
+            target_texts[split].append(data_maps['id2meta'][item_id])
         
         user_behavior_embeddings = model.encode(user_behavior[split], convert_to_tensor=True,device=str(device))
         torch.save(user_behavior_embeddings, os.path.join(output_dir, f'{split}_user_behavior.pth'))

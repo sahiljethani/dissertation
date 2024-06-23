@@ -8,7 +8,7 @@
 
 #$ -cwd
 #$ -l h_rt=05:10:00
-#$ -l h_vmem=30G
+#$ -l h_vmem=200G
 
 #$ -m bea -M s2550585@ed.ac.uk
 
@@ -23,7 +23,7 @@ conda activate /exports/eddie/scratch/s2550585/anaconda/envs/mypython # this sta
 # Run the program
 
 
-python /exports/eddie/scratch/s2550585/dissertation/dataset/process_amazon_2023.py --domain Baby_Products
+#python /exports/eddie/scratch/s2550585/dissertation/dataset/process_amazon_2023.py --domain Baby_Products
 python /exports/eddie/scratch/s2550585/dissertation/dataset/process_amazon_2023.py --domain Video_Games
-python /exports/eddie/scratch/s2550585/dissertation/dataset/process_amazon_2023.py --domain Toys_and_Games
+python /exports/eddie/scratch/s2550585/dissertation/dataset/process_amazon_2023.py --domain Amazon_Fashion
 
