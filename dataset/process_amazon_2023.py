@@ -9,6 +9,7 @@ from tqdm import tqdm
 from datasets import load_dataset
 from transformers import AutoModel, AutoTokenizer
 from sentence_transformers import SentenceTransformer
+import pandas as pd
 
 
 def parse_args():
@@ -221,6 +222,50 @@ if __name__ == '__main__':
             f.write(f"{line}\n")
 
     print("Item features generated.")
+
+    '''
+    Generate Item From Unisrec - roberta
+    '''
+    print("Generating item features for Unisrec...")
+    plm = 'hyp1231/blair-roberta-base'
+    tokenizer = AutoTokenizer.from_pretrained(plm)
+    model_plm = AutoModel.from_pretrained(plm).to(device)
+
+
+    all_embeddings = []
+    for pr in tqdm(range(0, len(sorted_text), args.batch_size)):
+        batch = sorted_text[pr:pr + args.batch_size]
+        inputs = tokenizer(batch, padding=True, truncation=True, max_length=512, return_tensors='pt').to(device)
+        with torch.no_grad():
+            outputs = model_plm(**inputs)
+        embeddings = outputs.last_hidden_state[:, 0, :].cpu().numpy()
+        all_embeddings.append(embeddings)
+    all_embeddings = np.concatenate(all_embeddings, axis=0)
+    all_embeddings.tofile(os.path.join(output_dir, f'{args.domain}.{plm.split("/")[-1]}.feature'))
+
+    print("Item features generated for Unisrec.")
+
+    '''
+    Dataset for Sasrec
+    '''
+    print("Generating dataset for Sasrec...")
+    df = pd.DataFrame(datasets['train'])
+    df.columns = ['user_id:token', 'item_id:token','rating:float','timestamp:float','history:token']
+    df.drop(columns=['rating:float','history:token'], inplace=True)
+
+
+    df2= pd.DataFrame(datasets['valid'])
+    df2.columns = ['user_id:token', 'item_id:token','rating:float','timestamp:float','history:token']
+    df2.drop(columns=['rating:float','history:token'], inplace=True)
+
+    df3= pd.DataFrame(datasets['test'])
+    df3.columns = ['user_id:token', 'item_id:token','rating:float','timestamp:float','history:token']
+    df3.drop(columns=['rating:float','history:token'], inplace=True)
+
+    #combine now 
+    df = pd.concat([df, df2, df3], ignore_index=True)
+    df.to_csv(os.path.join(output_dir, f'{args.domain}.inter'), sep='\t', index=False)
+
 
     '''
     Generate User features

@@ -8,7 +8,7 @@ num_layers: 2
 num_heads: 2
 
 metrics: ["Hit", "NDCG"]
-topk: [5,10, 50]
+topk: [10, 50]
 valid_metric: 'NDCG@10'
 
 hidden_size: 300

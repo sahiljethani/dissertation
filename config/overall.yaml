@@ -1,4 +1,4 @@
-data_path: 'dataset/processed/'
+data_path: 'processed/'
 benchmark_filename: ['train', 'valid', 'test']
 
 
@@ -12,7 +12,7 @@ load_col: {'inter': ['user_id','item_id_list','item_id', 'timestamp']}
 
 train_neg_sample_args: ~
 
-topk: [5,10, 50]
+topk: [10, 50]
 metrics: [Hit, NDCG]
 valid_metric: NDCG@10
 eval_batch_size: 2048
