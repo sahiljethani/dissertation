@@ -1,14 +1,14 @@
 #!/bin/bash
 # Grid Engine options (lines prefixed with #$)
-#$ -N dataprocessing
+#$ -N results
 
 # Request one GPU in the gpu queue:
 #$ -q gpu
 #$ -pe gpu-a100 1
 
 #$ -cwd
-#$ -l h_rt=05:10:00
-#$ -l h_vmem=200G
+#$ -l h_rt=03:10:00
+#$ -l h_vmem=50G
 
 #$ -m bea -M s2550585@ed.ac.uk
 
@@ -21,6 +21,12 @@ module load anaconda # this loads a specific version of anaconda
 conda activate /exports/eddie/scratch/s2550585/anaconda/envs/mypython # this starts the environment
 
 # Run the program
+
+python /exports/eddie/scratch/s2550585/dissertation/pop4rec.py -d Video_Games
+python /exports/eddie/scratch/s2550585/dissertation/blair4rec.py -d Video_Games
+python /exports/eddie/scratch/s2550585/dissertation/sasrec.py --dataset Video_Games
+python /exports/eddie/scratch/s2550585/dissertation/llm4rec.py --domain Video_Games 
+python /exports/eddie/scratch/s2550585/dissertation/mlp4rec.py --domain Video_Games
 
 
 #python /exports/eddie/scratch/s2550585/dissertation/dataset/try2.py --domain Baby_Products
