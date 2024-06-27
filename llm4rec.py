@@ -9,10 +9,12 @@ def run(domain,path):
 
     domain_path=os.path.join(path, domain)
 
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
     #loading pre-trained embeddings
-    item_profile_embeddings = torch.load(os.path.join(domain_path,'item_profile.pth'))
-    valid_user_embeddings = torch.load(os.path.join(domain_path,'valid_user_behavior.pth'))
-    test_user_embeddings = torch.load(os.path.join(domain_path,'test_user_behavior.pth'))
+    item_profile_embeddings = torch.load(os.path.join(domain_path,'item_profile.pth')).to(device)
+    valid_user_embeddings = torch.load(os.path.join(domain_path,'valid_user_behavior.pth')).to(device)
+    test_user_embeddings = torch.load(os.path.join(domain_path,'test_user_behavior.pth')).to(device)
     
 
     #loading data maps

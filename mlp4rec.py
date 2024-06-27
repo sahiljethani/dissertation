@@ -22,7 +22,7 @@ print(device)
 
 
 #Model Architecture
-def run(domain,path,batch):
+def run(domain,path,batch=512):
     class UserModel(nn.Module):
         def __init__(self):
             super(UserModel, self).__init__()
@@ -112,12 +112,12 @@ def run(domain,path,batch):
     domain_path=os.path.join(path, domain)
 
 
-    item_profile_embeddings = torch.load(os.path.join(domain_path,'item_profile.pth'))
-    train_user_embeddings = torch.load(os.path.join(domain_path,'train_user_behavior.pth'))
-    valid_user_embeddings = torch.load(os.path.join(domain_path,'valid_user_behavior.pth'))
-    test_user_embeddings = torch.load(os.path.join(domain_path,'test_user_behavior.pth'))
-    train_item_embeddings = torch.load(os.path.join(domain_path,'train_item_embeddings.pth'))
-    valid_item_embeddings = torch.load(os.path.join(domain_path,'valid_item_embeddings.pth'))
+    item_profile_embeddings = torch.load(os.path.join(domain_path,'item_profile.pth'),map_location=torch.device('cpu'))
+    train_user_embeddings = torch.load(os.path.join(domain_path,'train_user_behavior.pth'),map_location=torch.device('cpu'))
+    valid_user_embeddings = torch.load(os.path.join(domain_path,'valid_user_behavior.pth'),map_location=torch.device('cpu'))
+    test_user_embeddings = torch.load(os.path.join(domain_path,'test_user_behavior.pth'),map_location=torch.device('cpu'))
+    train_item_embeddings = torch.load(os.path.join(domain_path,'train_item_embeddings.pth'),map_location=torch.device('cpu'))
+    valid_item_embeddings = torch.load(os.path.join(domain_path,'valid_item_embeddings.pth'),map_location=torch.device('cpu'))
 
     print("Embeddings loaded")
 
@@ -167,7 +167,9 @@ def run(domain,path,batch):
     best_ndcg = -1
     best_hr = -1
 
-    for epoch in range(50):  # Example epoch count
+    print("Training started")
+
+    for epoch in range(100):  # Example epoch count
         user_model.train()
         item_model.train()
         epoch_loss = 0
@@ -206,7 +208,6 @@ def run(domain,path,batch):
             model_valid_item_embeddings = item_model(valid_item_embeddings)
 
             
-            
             v_pos,v_neg = cosine_embedding_loss(model_valid_user_embeddings, model_valid_item_embeddings)
             v_loss_bce = binary_cross_entropy(model_valid_user_embeddings, model_valid_item_embeddings)
             v_total=v_pos+2*v_neg+v_loss_bce
@@ -243,7 +244,7 @@ def run(domain,path,batch):
             best_ndcg = ndcg
             best_hr=hr
             
-            save_dir = os.path.join(domain_path, 'best_model.pth')
+            save_dir = os.path.join(domain_path, f'{domain}_best_model.pth')
             torch.save({
                 'epoch': epoch,
                 'user_model_state_dict': user_model.state_dict(),
@@ -257,6 +258,8 @@ def run(domain,path,batch):
     
 
         scheduler.step(avg_epoch_loss)
+
+    print("Training completed")
 
      # Plotting metrics
     Epoch = list(range(50))
@@ -291,25 +294,28 @@ def run(domain,path,batch):
     axs[5].legend()
 
     #plt.show()
-    fig.savefig(os.path.join(domain_path, 'loss_plot.png'))
+    fig.savefig(os.path.join(domain_path, f'{domain}_loss_plot.png'))
+
+    print("Metrics plotted")
     
 
 
-
     #TESTING
+
+    print("Testing started")
         
-    checkpoint = torch.load(os.path.join(domain_path, 'best_model.pth'))
+    checkpoint = torch.load(os.path.join(domain_path, f'{domain}_best_model.pth'))
     user_model.load_state_dict(checkpoint['user_model_state_dict'])
     item_model.load_state_dict(checkpoint['item_model_state_dict'])
 
 
-    user_model.eval()
-    item_model.eval()
+    user_model.eval().to(device)
+    item_model.eval().to(device)
 
 
     with torch.no_grad():
-        model_test_user_embeddings = user_model(test_user_embeddings.to(device))
-        model_item_profile_embeddings = item_model(item_profile_embeddings.to(device))
+        model_test_user_embeddings = user_model(test_user_embeddings)
+        model_item_profile_embeddings = item_model(item_profile_embeddings)
 
         index = faiss.IndexFlatIP(768)
         index.add(model_item_profile_embeddings.cpu().detach().numpy())
@@ -337,4 +343,4 @@ if __name__ == '__main__':
 
     print(f'LLM + MLP for {args.domain}')
 
-    run(args.domain,args.path)
+    run(args.domain,args.path,args.batch)
