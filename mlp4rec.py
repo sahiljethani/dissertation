@@ -22,7 +22,7 @@ print(device)
 
 
 #Model Architecture
-def run(domain,path,batch=512):
+def run(domain,path,batch=512,n_epochs=10):
     class UserModel(nn.Module):
         def __init__(self):
             super(UserModel, self).__init__()
@@ -112,12 +112,12 @@ def run(domain,path,batch=512):
     domain_path=os.path.join(path, domain)
 
 
-    item_profile_embeddings = torch.load(os.path.join(domain_path,'item_profile.pth'),map_location=torch.device('cpu'))
-    train_user_embeddings = torch.load(os.path.join(domain_path,'train_user_behavior.pth'),map_location=torch.device('cpu'))
-    valid_user_embeddings = torch.load(os.path.join(domain_path,'valid_user_behavior.pth'),map_location=torch.device('cpu'))
-    test_user_embeddings = torch.load(os.path.join(domain_path,'test_user_behavior.pth'),map_location=torch.device('cpu'))
-    train_item_embeddings = torch.load(os.path.join(domain_path,'train_item_embeddings.pth'),map_location=torch.device('cpu'))
-    valid_item_embeddings = torch.load(os.path.join(domain_path,'valid_item_embeddings.pth'),map_location=torch.device('cpu'))
+    item_profile_embeddings = torch.load(os.path.join(domain_path,'item_profile.pth'))
+    train_user_embeddings = torch.load(os.path.join(domain_path,'train_user_behavior.pth'))
+    valid_user_embeddings = torch.load(os.path.join(domain_path,'valid_user_behavior.pth'))
+    test_user_embeddings = torch.load(os.path.join(domain_path,'test_user_behavior.pth'))
+    train_item_embeddings = torch.load(os.path.join(domain_path,'train_item_embeddings.pth'))
+    valid_item_embeddings = torch.load(os.path.join(domain_path,'valid_item_embeddings.pth'))
 
     print("Embeddings loaded")
 
@@ -152,30 +152,23 @@ def run(domain,path,batch=512):
     optimizer = torch.optim.AdamW(list(user_model.parameters()) + list(item_model.parameters()), lr=1e-4)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=2, factor=0.5)
 
+
     # Initialize metrics storage
-    Train_Loss = []
-    Valid_Loss = []
-    NDCG = []
-    HR = []
-    Train_Entropy = []
-    Valid_Entropy = []
-    Train_Pos_loss = []
-    Valid_Pos_loss = []
-    Train_Neg_loss = []
-    Valid_Neg_loss = []
+    Train_Loss, Valid_Loss, NDCG, HR = [], [], [], []
+    Train_Entropy, Valid_Entropy, Train_Pos_loss, Valid_Pos_loss = [], [], [], []
+    Train_Neg_loss, Valid_Neg_loss = [], []
 
     best_ndcg = -1
     best_hr = -1
 
+
     print("Training started")
 
-    for epoch in range(100):  # Example epoch count
+    for epoch in range(n_epochs):  # Example epoch count
         user_model.train()
         item_model.train()
-        epoch_loss = 0
-        pos_loss=0
-        neg_loss=0
-        entropy_loss=0
+
+        epoch_loss, pos_loss, neg_loss, entropy_loss = 0, 0, 0, 0
         
         for user_emb_batch, item_emb_batch in tqdm(dataloader):
 
@@ -201,20 +194,39 @@ def run(domain,path,batch=512):
         #valid
         user_model.eval()
         item_model.eval()
-        
+        valid_loss, valid_pos_loss, valid_neg_loss, valid_entropy_loss = 0, 0, 0, 0
+        valid_dataloader = DataLoader(UserItemDataset(valid_user_embeddings, valid_item_embeddings), batch_size=batch // 2, shuffle=False)
+
+    
         with torch.no_grad():
+            for v_user_emb_batch, v_item_emb_batch in tqdm(valid_dataloader):
+                v_user_embeddings = user_model(v_user_emb_batch)
+                v_item_embeddings = item_model(v_item_emb_batch)
+
+                v_pos, v_neg = cosine_embedding_loss(v_user_embeddings, v_item_embeddings)
+                v_loss_bce = binary_cross_entropy(v_user_embeddings, v_item_embeddings)
+                v_total = v_pos + 2 * v_neg + v_loss_bce
+
+                valid_loss += v_total.item()
+                valid_pos_loss += v_pos.item()
+                valid_neg_loss += v_neg.item()
+                valid_entropy_loss += v_loss_bce.item()
+
+            valid_loss /= len(valid_dataloader)
+            valid_pos_loss /= len(valid_dataloader)
+            valid_neg_loss /= len(valid_dataloader)
+            valid_entropy_loss /= len(valid_dataloader)
+        
             model_valid_user_embeddings = user_model(valid_user_embeddings)
             model_item_profile_embeddings = item_model(item_profile_embeddings)
-            model_valid_item_embeddings = item_model(valid_item_embeddings)
 
             
-            v_pos,v_neg = cosine_embedding_loss(model_valid_user_embeddings, model_valid_item_embeddings)
-            v_loss_bce = binary_cross_entropy(model_valid_user_embeddings, model_valid_item_embeddings)
-            v_total=v_pos+2*v_neg+v_loss_bce
-            
             index = faiss.IndexFlatIP(768)
-            index.add(model_item_profile_embeddings.cpu().detach().numpy())
-            distances, indices = index.search(model_valid_user_embeddings.cpu().detach().numpy(), 10)
+            gpu_index = faiss.index_cpu_to_all_gpus(index)
+            gpu_index.add(model_item_profile_embeddings.cpu().detach().numpy())
+            distances, indices = gpu_index.search(model_valid_user_embeddings.cpu().detach().numpy(), 10)
+            # index.add(model_item_profile_embeddings.cpu().detach().numpy())
+            # distances, indices = index.search(model_valid_user_embeddings.cpu().detach().numpy(), 10)
             predictions = []
             for (d, idx) in zip(distances, indices):
                 top_10_sentences = [data_maps['id2item'][i] for i in idx]
@@ -223,21 +235,21 @@ def run(domain,path,batch=512):
             ndcg, hr = metrics_10(valid_target, predictions,10)
 
         
-        avg_epoch_loss = epoch_loss / len(dataloader)
-        Train_Loss.append(avg_epoch_loss)
-        Valid_Loss.append(v_total.item())
+        Train_Loss.append(epoch_loss / len(dataloader))
+        Valid_Loss.append(valid_loss)
         NDCG.append(ndcg)
         HR.append(hr)
         Train_Entropy.append(entropy_loss / len(dataloader))
-        Valid_Entropy.append(v_loss_bce.item())
+        Valid_Entropy.append(valid_entropy_loss)
         Train_Pos_loss.append(pos_loss / len(dataloader))
-        Valid_Pos_loss.append(v_pos.item())
+        Valid_Pos_loss.append(valid_pos_loss)
         Train_Neg_loss.append(neg_loss / len(dataloader))
-        Valid_Neg_loss.append(v_neg.item())
-        print(f"Epoch: {epoch}, Train Loss: {avg_epoch_loss:.4f}, Valid Loss: {v_total:.4f}, NDCG: {ndcg:.4f}, HR: {hr:.4f}, "
-              f"Train_Entropy: {entropy_loss/len(dataloader):.4f}, Train_Pos_loss: {pos_loss/len(dataloader):.4f}, "
-              f"Train_Neg_loss: {neg_loss/len(dataloader):.4f}, Valid_Entropy: {v_loss_bce:.4f}, "
-              f"Valid_Pos_loss: {v_pos:.4f}, Valid_Neg_loss: {v_neg:.4f}")
+        Valid_Neg_loss.append(valid_neg_loss)
+
+        print(f"Epoch: {epoch}, Train Loss: {epoch_loss / len(dataloader):.4f}, Valid Loss: {valid_loss:.4f}, NDCG: {ndcg:.4f}, HR: {hr:.4f}, "
+              f"Train_Entropy: {entropy_loss / len(dataloader):.4f}, Train_Pos_loss: {pos_loss / len(dataloader):.4f}, "
+              f"Train_Neg_loss: {neg_loss / len(dataloader):.4f}, Valid_Entropy: {valid_entropy_loss:.4f}, "
+              f"Valid_Pos_loss: {valid_pos_loss:.4f}, Valid_Neg_loss: {valid_neg_loss:.4f}")
         
         # Save best model based on NDCG@10
         if ndcg > best_ndcg or (ndcg == best_ndcg and hr > best_hr):
@@ -250,19 +262,19 @@ def run(domain,path,batch=512):
                 'user_model_state_dict': user_model.state_dict(),
                 'item_model_state_dict': item_model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
-                'loss': avg_epoch_loss,
+                'loss': epoch_loss / len(dataloader),
                 'ndcg': ndcg,
                 'hr': hr
             }, save_dir)
         
     
 
-        scheduler.step(avg_epoch_loss)
+        scheduler.step(epoch_loss / len(dataloader))
 
     print("Training completed")
 
      # Plotting metrics
-    Epoch = list(range(50))
+    Epoch = list(range(n_epochs))
     fig, axs = plt.subplots(6, 1, figsize=(10, 20), sharex=True)
 
     axs[0].plot(Epoch, Train_Loss, label='Train Loss', marker='o')
@@ -318,8 +330,11 @@ def run(domain,path,batch=512):
         model_item_profile_embeddings = item_model(item_profile_embeddings)
 
         index = faiss.IndexFlatIP(768)
-        index.add(model_item_profile_embeddings.cpu().detach().numpy())
-        distances, indices = index.search(model_test_user_embeddings.cpu().detach().numpy(), 50)
+        index.add(model_item_profile_embeddings.cpu().detach().numpy())           
+        gpu_index = faiss.index_cpu_to_all_gpus(index)
+        gpu_index.add(model_item_profile_embeddings.cpu().detach().numpy())
+        distances, indices = gpu_index.search(model_valid_user_embeddings.cpu().detach().numpy(), 50)
+        # distances, indices = index.search(model_test_user_embeddings.cpu().detach().numpy(), 50)
         predictions = []
         for (d, idx) in zip(distances, indices):
             top_10_sentences = [data_maps['id2item'][i] for i in idx]

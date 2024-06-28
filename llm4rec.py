@@ -23,16 +23,19 @@ def run(domain,path):
 
     #getting top 50 items for test and valid
     index = faiss.IndexFlatIP(768)
-    index.add(item_profile_embeddings.cpu().detach().numpy())
+    gpu_index = faiss.index_cpu_to_all_gpus(index)
+    gpu_index.add(item_profile_embeddings.cpu().detach().numpy())
+    distances_test, indices_test = gpu_index.search(test_user_embeddings.cpu().detach().numpy(), 50)
+    # index.add(item_profile_embeddings.cpu().detach().numpy())
 
-    distances_test, indices_test = index.search(test_user_embeddings.cpu().detach().numpy(), 50)
+    # distances_test, indices_test = index.search(test_user_embeddings.cpu().detach().numpy(), 50)
 
     predictions_test = []
     for (d, idx) in (zip(distances_test, indices_test)):
         top_50_items = [data_maps['id2item'][i] for i in idx]
         predictions_test.append(top_50_items)
 
-    distances_valid, indices_valid = index.search(valid_user_embeddings.cpu().detach().numpy(), 50)
+    distances_valid, indices_valid = gpu_index.search(valid_user_embeddings.cpu().detach().numpy(), 50)
 
     predictions_valid = []
     for (d, idx) in (zip(distances_valid, indices_valid)):
